@@ -7,7 +7,7 @@ const path = require('path');
 const cors = require('cors');
 
 const app = express();
-const PORT = 5000;
+const PORT = process.env.PORT || 5000;
 const FILE_PATH = path.join(__dirname, './notes.json'); // Path to notes.json
 
 app.use(cors());
@@ -116,6 +116,9 @@ app.post('/save_notes', (req, res) => {
 // Endpoint to add new notes
 
 
+// app.listen(PORT, () => {
+//   console.log(`Server running on http://localhost:${PORT}`);
+// });
 app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
+  console.log(`Server running on port ${PORT}`);
 });
