@@ -1,24 +1,27 @@
 const express = require('express');
 const fs = require('fs');
-const CryptoJS = require('crypto-js');
 const crypto = require('crypto');
 const bodyParser = require('body-parser');
 const path = require('path');
 const cors = require('cors');
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 3000;
 const FILE_PATH = path.join(__dirname, './notes.json'); // Path to notes.json
 
 app.use(cors());
 app.use(bodyParser.json());
-app.use(express.static(path.join(__dirname, '../my_app/build'))); // Serve React frontend
 
+// Serve the React frontend build
+app.use(express.static(path.join(__dirname, 'public')));
+
+// Function to generate key and IV for encryption
 function generateKeyIV(userKey, iv = null) {
   const key = crypto.createHash('sha256').update(userKey).digest().slice(0, 32); // 256-bit key
   return iv ? { key, iv: Buffer.from(iv, 'hex') } : { key, iv: crypto.randomBytes(16) }; // 128-bit IV
 }
 
+// Function to encrypt JSON content
 function encryptJSON(content, userKey) {
   const { key, iv } = generateKeyIV(userKey);
   const cipher = crypto.createCipheriv('aes-256-cbc', key, iv);
@@ -27,6 +30,7 @@ function encryptJSON(content, userKey) {
   return { iv: iv.toString('hex'), encryptedData: encrypted };
 }
 
+// Function to decrypt JSON content
 function decryptJSON(encryptedData, userKey) {
   const { key, iv } = generateKeyIV(userKey, encryptedData.iv);
   const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv);
@@ -46,6 +50,7 @@ app.get('/notes', (req, res) => {
   });
 });
 
+// Endpoint to encrypt the notes
 app.post('/encrypt', (req, res) => {
   const { userKey } = req.body;
 
@@ -68,7 +73,7 @@ app.post('/encrypt', (req, res) => {
   res.send('Encrypted JSON data has been saved to notes.json');
 });
 
-
+// Endpoint to decrypt the notes
 app.post('/decrypt', (req, res) => {
   const { userKey } = req.body;
 
@@ -81,16 +86,14 @@ app.post('/decrypt', (req, res) => {
     const fileContent = fs.readFileSync(FILE_PATH, 'utf8');
     encryptedData = JSON.parse(fileContent);
 
-    // Check if the file is encrypted by looking for encryptedData.encryptedData
-    const isDecrypted = !!encryptedData.encryptedData;
+    // Check if the file is encrypted
+    const isEncrypted = !!encryptedData.encryptedData;
 
-    if (isDecrypted) {
-      // Try to decrypt
+    if (isEncrypted) {
       const decryptedData = decryptJSON(encryptedData, userKey);
       fs.writeFileSync(FILE_PATH, JSON.stringify(decryptedData, null, 2), 'utf8');
       return res.json({ success: true, message: 'Decrypted JSON data has been saved to notes.json', isDecrypted: true });
     } else {
-      // File is already decrypted
       return res.json({ success: true, message: 'File is already decrypted', isDecrypted: false });
     }
   } catch (error) {
@@ -99,6 +102,7 @@ app.post('/decrypt', (req, res) => {
   }
 });
 
+// Endpoint to save notes
 app.post('/save_notes', (req, res) => {
   const newNotes = req.body.notes;
 
@@ -112,13 +116,12 @@ app.post('/save_notes', (req, res) => {
   });
 });
 
+// Serve React app for all other routes
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
 
-// Endpoint to add new notes
-
-
-// app.listen(PORT, () => {
-//   console.log(`Server running on http://localhost:${PORT}`);
-// });
+// Start server
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
