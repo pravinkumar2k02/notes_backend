@@ -11,7 +11,7 @@ const PORT = process.env.PORT || 5000;
 const FILE_PATH = path.join(__dirname, './notes.json'); // Path to notes.json
 
 const AUTH_TOKEN = '################'; // Replace with your actual auth token
-// const AUTH_TOKEN = process.env.PRIVATE_AUTH_TOKEN;
+// const AUTH_TOKEN = process.env.PRIVATE_AUTH_TOKEN;  //use this if you are using env variables
 
 app.use(cors());
 app.use(bodyParser.json());
