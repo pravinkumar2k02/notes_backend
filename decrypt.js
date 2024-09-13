@@ -17,7 +17,7 @@ function decryptJSON(encryptedData, userKey) {
 }
 
 // Path to the notes.json file
-const filePath = './notes1.json';
+const filePath = './notes.json';
 
 // User key for decryption
 const userKey = '1234567';
