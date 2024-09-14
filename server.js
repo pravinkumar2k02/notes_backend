@@ -17,10 +17,10 @@ const FILE_PATH = path.join(__dirname, './notes.json'); // Path to notes.json
 // Use environment variable for auth token
 const AUTH_TOKEN = process.env.PRIVATE_AUTH_TOKEN; 
 // const AUTH_TOKEN = 'ffdr4eFD5rcgfhREE344e4e';
-
+const Frontend_api = process.env.FRONTEND_API;
 // Middleware for security
 app.use(helmet()); // Set various HTTP headers for security
-app.use(cors({ origin: 'https://crypto-private-notes.netlify.app', credentials: true })); // Restrict origins
+app.use(cors({ origin: Frontend_api, credentials: true })); // Restrict origins
 // app.use(cors({ origin: 'http://localhost:3000', credentials: true }));
 app.use(bodyParser.json());
 app.use(express.static(path.join(__dirname, '../my_app/build'))); // Serve React frontend
@@ -70,45 +70,28 @@ function decryptJSON(encryptedData, userKey) {
   return JSON.parse(decrypted);
 }
 
-//keep alive
+// Keep decrypted notes in memory until encryption is called
+let decryptedNotesBuffer = null;
+
+// Keep alive endpoint
 app.get('/keep-alive', authenticate, (req, res) => {
   res.status(200).json({ message: 'Server is alive' });
   console.log("server is alive");
 });
 
-// Endpoint to get notes (read-only)
+// Endpoint to get notes (read-only, operates on decrypted buffer if available)
 app.get('/notes', authenticate, (req, res) => {
   try {
-    const data = fs.readFileSync(FILE_PATH, 'utf8');
-    return res.json(JSON.parse(data));
+    // Return notes from memory buffer if decrypted
+    if (decryptedNotesBuffer) {
+      return res.json(decryptedNotesBuffer);
+    }
+    // If not decrypted yet, return empty or handle otherwise
+    return res.status(400).send('Notes have not been decrypted yet');
   } catch (err) {
     console.error('Error reading notes:', err);
     return res.status(500).send('Error reading notes');
   }
-});
-
-// Validate and sanitize input before encrypting
-app.post('/encrypt', authenticate, [
-  body('userKey').isLength({ min: 8 }).matches(/[A-Z]/).withMessage('Weak key: must be at least 8 characters and contain an uppercase letter'),
-], (req, res) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
-  }
-
-  const { userKey } = req.body;
-  let jsonData;
-  try {
-    const fileContent = fs.readFileSync(FILE_PATH, 'utf8');
-    jsonData = JSON.parse(fileContent);
-  } catch (err) {
-    console.error('Error reading or parsing the file:', err);
-    return res.status(500).send('Error reading or parsing the file');
-  }
-
-  const encryptedData = encryptJSON(jsonData, userKey);
-  fs.writeFileSync(FILE_PATH, JSON.stringify(encryptedData, null, 2), 'utf8');
-  res.send('Encrypted JSON data has been saved to notes.json');
 });
 
 // Validate and sanitize input before decrypting
@@ -130,9 +113,9 @@ app.post('/decrypt', authenticate, [
     const isDecrypted = !!encryptedData.encryptedData;
 
     if (isDecrypted) {
-      const decryptedData = decryptJSON(encryptedData, userKey);
-      fs.writeFileSync(FILE_PATH, JSON.stringify(decryptedData, null, 2), 'utf8');
-      return res.json({ success: true, message: 'Decrypted JSON data has been saved to notes.json', isDecrypted: true });
+      // Decrypt and store in memory buffer
+      decryptedNotesBuffer = decryptJSON(encryptedData, userKey);
+      return res.json({ success: true, message: 'Decrypted JSON data is stored in memory buffer', isDecrypted: true });
     } else {
       return res.json({ success: true, message: 'File is already decrypted', isDecrypted: false });
     }
@@ -142,7 +125,32 @@ app.post('/decrypt', authenticate, [
   }
 });
 
-// Validate input and save notes
+// Validate and sanitize input before encrypting
+app.post('/encrypt', authenticate, [
+  body('userKey').isLength({ min: 8 }).matches(/[A-Z]/).withMessage('Weak key: must be at least 8 characters and contain an uppercase letter'),
+], (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ errors: errors.array() });
+  }
+
+  const { userKey } = req.body;
+
+  if (!decryptedNotesBuffer) {
+    return res.status(400).send('No decrypted data to encrypt');
+  }
+
+  // Encrypt the buffer data and save to file
+  const encryptedData = encryptJSON(decryptedNotesBuffer, userKey);
+  fs.writeFileSync(FILE_PATH, JSON.stringify(encryptedData, null, 2), 'utf8');
+  
+  // Clear buffer after encryption
+  decryptedNotesBuffer = null;
+
+  res.send('Encrypted JSON data has been saved to notes.json');
+});
+
+// Validate input and save notes to memory buffer (not to the file)
 app.post('/save_notes', authenticate, [
   body('notes').isObject().withMessage('Invalid notes format'),
 ], (req, res) => {
@@ -152,13 +160,14 @@ app.post('/save_notes', authenticate, [
   }
 
   const newNotes = req.body.notes;
-  fs.writeFile(FILE_PATH, JSON.stringify(newNotes, null, 2), 'utf8', (err) => {
-    if (err) {
-      console.error('Error writing to notes file:', err);
-      return res.status(500).send('Error saving notes');
-    }
-    res.send('Notes saved successfully');
-  });
+
+  // Update the memory buffer instead of directly updating the file
+  if (decryptedNotesBuffer) {
+    decryptedNotesBuffer = newNotes;
+    return res.send('Notes updated in memory buffer');
+  } else {
+    return res.status(400).send('Notes have not been decrypted yet');
+  }
 });
 
 // Start the server
